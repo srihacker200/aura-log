@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: aura-log
+    runtime: python
+    plan: starter
+    branch: copilot/aura-log-premium-foundation
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /
+    disk:
+      name: aura-log-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/aura_log.db
+      - key: SECRET_KEY
+        generateValue: true
