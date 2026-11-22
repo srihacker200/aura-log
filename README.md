@@ -1,2 +1,3 @@
-# aura-log
-AURA LOG — premium student attendance app with Android student client, Next.js admin dashboard, FastAPI backend, and MongoDB.
+# AURA LOG
+
+Premium attendance platform starter for Android students and web administrators.
