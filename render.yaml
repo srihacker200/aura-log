@@ -6,15 +6,15 @@ services:
     branch: copilot/aura-log-premium-foundation
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
-    healthCheckPath: /login
-    disk:
-      name: aura-log-data
-      mountPath: /var/data
-      sizeGB: 1
+    healthCheckPath: /health
     envVars:
-      - key: DATABASE_PATH
-        value: /var/data/aura_log.db
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: aura_log
       - key: SECRET_KEY
         generateValue: true
+      - key: BOOTSTRAP_TOKEN
+        sync: false
       - key: COOKIE_SECURE
         value: "1"
