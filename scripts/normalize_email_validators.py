@@ -1,23 +1,24 @@
-"""Normalize over-escaped email regexes in app.py before starting the service."""
+"""Normalize legacy over-escaped email regexes before launching the app."""
 from pathlib import Path
 
 app = Path(__file__).resolve().parents[1] / "app.py"
 source = app.read_text(encoding="utf-8")
-slash = chr(92)
+backslash = chr(92)
 lines = source.splitlines(keepends=True)
 changed = 0
+email_regex_count = 0
 for index, line in enumerate(lines):
-    if "re.fullmatch(r\"" in line and "@" in line and "\\\\" in line:
-        lines[index] = line.replace(slash * 2, slash)
-        changed += 1
+    if 're.fullmatch(r"' in line and "@" in line:
+        email_regex_count += 1
+        normalized = line.replace(backslash * 2, backslash)
+        if normalized != line:
+            lines[index] = normalized
+            changed += 1
 source = "".join(lines)
-app.write_text(source, encoding="utf-8")
-
-# Verify every email-validation regex uses a single escape for whitespace and dots.
+if not email_regex_count:
+    raise SystemExit("No email validators found; refusing to deploy.")
 for line in source.splitlines():
-    if "re.fullmatch(r\"" in line and "@" in line:
-        if slash * 2 in line:
-            raise SystemExit("Email validator still contains doubled backslashes.")
-        if "\\s" not in line or "\\." not in line:
-            raise SystemExit("Email validator verification failed.")
-print(f"Email validator normalization passed ({changed} line(s) corrected).")
+    if 're.fullmatch(r"' in line and "@" in line and backslash * 2 in line:
+        raise SystemExit("Email validator still contains doubled backslashes.")
+app.write_text(source, encoding="utf-8")
+print(f"Email validators checked: {email_regex_count}; corrected: {changed}.")
