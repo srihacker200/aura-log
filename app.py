@@ -64,7 +64,7 @@ def create_app(test_config=None):
                     database.attendance.create_index([("attendance_date", -1), ("class_id", 1)])
                     database.login_attempts.create_index("created_at", expireAfterSeconds=900)
                     database.password_resets.create_index("expires_at", expireAfterSeconds=0)
-                    database.audit_log.create_index("created_at", -1)
+                    database.audit_log.create_index([("created_at", -1)])
                     indexes_ready = True
         if "mongo_db" not in g:
             g.mongo_db = client[app.config["MONGODB_DATABASE"]]
