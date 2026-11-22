@@ -1,43 +1,35 @@
 # AURA LOG
 
-AURA LOG is a Flask attendance-management app backed by MongoDB Atlas. It includes admin, teacher and student accounts; class rosters; daily attendance; reporting; CSV export; and an admin audit log.
+Flask attendance management backed by MongoDB Atlas: admin/teacher/student roles, attendance, class and student rosters, reports/CSV, audit history, password-reset email, bulk CSV import, optional absence email notifications, teacher class scoping, readiness/health checks and operational backup/restore scripts.
 
-## Security note
-Do not commit database credentials or share them in chats. If a database password has been exposed, rotate it in MongoDB Atlas before deployment. Configure secrets only in your host's environment settings. This project is a practical app foundation, not a security certification; obtain your organization's privacy/security review before putting real student data in it. Teachers currently share the organization-wide roster; class-level teacher restrictions, email/SMS alerts, bulk import and password-reset mail are not included.
+## Deploy (Render + MongoDB Atlas)
+1. Create/use an Atlas project/cluster and database user. Configure Atlas Network Access for the Render service. Rotate any credentials previously shared in chat.
+2. Deploy this branch from the Render Blueprint. Configure `MONGODB_URI`, `BOOTSTRAP_TOKEN`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM`, and optionally `EMAIL_ABSENCE_NOTIFICATIONS=1` in Render environment settings. Do not commit credentials. Set `MONGODB_DATABASE=aura_log`; Render generates `SECRET_KEY`.
+3. Wait for `/ready`, visit `/setup`, create the first admin with a unique strong password, remove `BOOTSTRAP_TOKEN`, then redeploy. Configure and test SMTP before relying on password reset.
+4. Create classes, add students or use the CSV template/import, create teacher accounts and select their assigned classes. Student login email must match roster email.
 
-## Deploy on Render with MongoDB Atlas
+## Features and operational notes
+- Password reset uses single-use random tokens stored hashed, expiring after 30 minutes. Responses do not disclose whether an email exists. SMTP is optional but must be configured for delivery.
+- Absence email notices are off by default; enable `EMAIL_ABSENCE_NOTIFICATIONS=1` only after SMTP and school contact/data policies are verified. It emails the student's roster email, not a guardian address.
+- CSV import requires `full_name,email,class_name`; use the in-app downloadable template. Up to 1,000 rows, 1 MB. Teachers can import only into assigned classes. Unknown classes/invalid rows/duplicates are skipped.
+- Teachers can only see and modify assigned classes; administrators assign classes on account creation. Class assignments are stored as class ObjectIds.
+- `/health` and `/ready` are database-backed health endpoints. `/monitoring` (admin-only) shows basic record counts, not full infrastructure monitoring or alerting.
+- `scripts/mongo_backup.py` and `scripts/mongo_restore.py` require MongoDB Database Tools. Schedule backups from a trusted host/CI job with secrets, encrypt archives, store them outside the app/repository, set retention, and regularly test restores. Restore uses `--drop`; explicit `CONFIRM_RESTORE=YES` is required.
+- Security headers, CSRF, password hashing, login throttling, secure-cookie defaults, server-side role checks, upload size/row limits, and spreadsheet-safe CSV output are included. This is not a security certification; conduct a privacy and security review before real student data.
+- Existing SQLite data is not automatically migrated; export and plan a separate controlled migration if necessary.
 
-1. In Atlas, create or use the `AuraCluster` cluster in project `AURA_LOG`, create a database user, and allow the Render service to connect in **Network Access**. Prefer a narrowly scoped database user; avoid opening access to all IPs unless necessary for your hosting setup. Atlas free-tier eligibility/limits can change.
-2. In Render, choose **New → Blueprint**, connect this repository and select branch `copilot/aura-log-premium-foundation`. Review and deploy `render.yaml`.
-3. In the Render service environment settings, add `MONGODB_URI` with the Atlas driver URI, replacing `<password>` with the database user's password (URL-encode special characters). Keep it secret. Set `MONGODB_DATABASE` to `aura_log` if not already populated. Add a strong random `BOOTSTRAP_TOKEN`; Render generates `SECRET_KEY` from the Blueprint.
-4. Wait for `/health` to report `ok`. Visit the service's `/setup` page, enter the bootstrap token, and create the first administrator with a unique strong password (12+ characters).
-5. Remove `BOOTSTRAP_TOKEN` from Render environment settings after administrator setup, then redeploy. Sign in, create classes and students, then create user accounts. For student logins, account email must match the roster student's email.
-
-**Important:** Do not paste the URI/password into GitHub files. The URI belongs only in Render's secret environment variable. Existing SQLite records are not automatically copied to MongoDB; export/backup them before switching if they contain data you need.
-
-## Run locally
+## Local run
+Python 3.10+ and MongoDB Database Tools only for backups.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\Activate.ps1
 pip install -r requirements.txt
 export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-export MONGODB_URI='mongodb+srv://<db_user>:<password>@<cluster-host>/?retryWrites=true&w=majority'
+export MONGODB_URI='mongodb+srv://<db_user>:<URL_ENCODED_PASSWORD>@<cluster-host>/?retryWrites=true&w=majority'
 export MONGODB_DATABASE=aura_log
 export BOOTSTRAP_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 python app.py
 ```
 
-Open <http://127.0.0.1:5000/setup> and create the initial administrator. Never commit your `.env` file or secrets.
-
-## Features
-
-- Role-protected admin, teacher and student sign-in; secure password hashing, CSRF, secure cookies and login throttling.
-- Class and student roster management; attendance add/update/delete with notes and duplicate-per-student/date prevention.
-- Student portal showing only the signed-in student's matching roster email attendance.
-- Date-range summaries, spreadsheet-safe CSV export, and admin audit history.
-- MongoDB collections and indexes are provisioned automatically when the app connects.
-
-## Configuration
-
-`MONGODB_URI` (required; secret), `MONGODB_DATABASE` (default `aura_log`), `SECRET_KEY` (required in production; Render Blueprint generates it), `BOOTSTRAP_TOKEN` (temporary initial-admin secret), `COOKIE_SECURE` (true on HTTPS), `PORT` (host-provided), and `FLASK_DEBUG` (local only).
+Never commit `.env`, MongoDB URIs, SMTP credentials, backup archives, or real student data.
