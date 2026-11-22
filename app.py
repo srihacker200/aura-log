@@ -19,6 +19,10 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
+# Email address shape validation shared by student and user forms/imports.
+EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
 def utcnow():
     return datetime.now(timezone.utc)
 
@@ -193,7 +197,7 @@ def create_app(test_config=None):
             password = request.form.get("password", "")
             if not expected or not secrets.compare_digest(request.form.get("setup_token", ""), expected):
                 flash("Invalid setup token. Check deployment environment configuration.", "error")
-            elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or not 2 <= len(name) <= 100:
+            elif not EMAIL_RE.fullmatch(email) or not 2 <= len(name) <= 100:
                 flash("Enter a valid email and a name between 2 and 100 characters.", "error")
             elif not 12 <= len(password) <= 200:
                 flash("Use a password between 12 and 200 characters.", "error")
@@ -281,7 +285,7 @@ def create_app(test_config=None):
             record["id"] = str(record["_id"])
             record["class_name"] = record.get("class_name") or "—"
         totals = {status: sum(1 for row in records if row["status"] == status) for status in ("Present", "Absent", "Late")}
-        students = list(db().students.find({"active": True, **teacher_filter()} ).sort("full_name", 1)) if current_user.role != "student" else []
+        students = list(db().students.find({"active": True, **teacher_filter()}).sort("full_name", 1)) if current_user.role != "student" else []
         classes = list(db().classes.find({"_id": {"$in": current_user.class_ids}} if current_user.role == "teacher" else {}).sort("name", 1)) if current_user.role != "student" else []
         return render_template("dashboard.html", records=records, totals=totals, selected_date=selected,
             students=students, classes=classes, can_manage=current_user.role in ("admin", "teacher"))
@@ -305,7 +309,7 @@ def create_app(test_config=None):
                 db().attendance.insert_one(record)
                 audit("attendance.created", f"student_id={student_id}; date={when}")
                 if status == "Absent" and os.environ.get("EMAIL_ABSENCE_NOTIFICATIONS", "0") == "1" and student.get("email"):
-                    body = f"Hello {student['full_name']},\\n\\nAn absent attendance status was recorded for {when}. Contact your school if you believe this is incorrect."
+                    body = f"Hello {student['full_name']},\n\nAn absent attendance status was recorded for {when}. Contact your school if you believe this is incorrect."
                     sent = send_email(student["email"], "AURA LOG attendance notice", body)
                     db().notifications.insert_one({"student_id": student["_id"], "email": student["email"], "type": "absence",
                         "status": "sent" if sent else "failed", "created_at": utcnow()})
@@ -383,7 +387,7 @@ def create_app(test_config=None):
             email = request.form.get("email", "").strip().lower() or None
             class_id = oid(request.form.get("class_id", "")) if request.form.get("class_id") else None
             allowed = current_user.role != "teacher" or class_id in current_user.class_ids
-            if not name or len(name) > 100 or not allowed or (email and not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email)):
+            if not name or len(name) > 100 or not allowed or (email and not EMAIL_RE.fullmatch(email)):
                 flash("Enter a valid student name, email, and assigned class.", "error")
             else:
                 class_doc = database.classes.find_one({"_id": class_id}) if class_id else None
@@ -422,7 +426,7 @@ def create_app(test_config=None):
                     raise ValueError("Maximum import size is 1,000 rows.")
                 row = {str(key or "").strip().lower(): (value or "").strip() for key, value in row.items()}
                 name, email, class_name = row.get("full_name", ""), row.get("email", "").lower(), row.get("class_name", "")
-                if not name or len(name) > 100 or (email and not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email)):
+                if not name or len(name) > 100 or (email and not EMAIL_RE.fullmatch(email)):
                     skipped += 1
                     continue
                 class_doc = dbx.classes.find_one({"name": class_name}, collation={"locale": "en", "strength": 2}) if class_name else None
@@ -448,7 +452,7 @@ def create_app(test_config=None):
     @app.get("/students/import-template.csv")
     @roles_required("admin", "teacher")
     def import_template():
-        response = make_response("full_name,email,class_name\\nExample Student,student@example.com,Class A\\n")
+        response = make_response("full_name,email,class_name\nExample Student,student@example.com,Class A\n")
         response.headers["Content-Type"] = "text/csv; charset=utf-8"
         response.headers["Content-Disposition"] = 'attachment; filename="aura-log-students-template.csv"'
         return response
@@ -460,7 +464,7 @@ def create_app(test_config=None):
         name = request.form.get("full_name", "").strip()[:100]
         email = request.form.get("email", "").strip().lower() or None
         class_id = oid(request.form.get("class_id", "")) if request.form.get("class_id") else None
-        if not student_oid or not name or (email and not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email)) or (current_user.role == "teacher" and class_id not in current_user.class_ids):
+        if not student_oid or not name or (email and not EMAIL_RE.fullmatch(email)) or (current_user.role == "teacher" and class_id not in current_user.class_ids):
             abort(400)
         filter_query = {"_id": student_oid, **teacher_filter()}
         class_doc = db().classes.find_one({"_id": class_id}) if class_id else None
@@ -488,7 +492,7 @@ def create_app(test_config=None):
             role = request.form.get("role", "")
             class_ids = [oid(value) for value in request.form.getlist("class_ids")]
             class_ids = [value for value in class_ids if value]
-            if not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email) or not name or len(name) > 100 or not 12 <= len(password) <= 200 or role not in ("admin", "teacher", "student"):
+            if not EMAIL_RE.fullmatch(email) or not name or len(name) > 100 or not 12 <= len(password) <= 200 or role not in ("admin", "teacher", "student"):
                 flash("Provide a valid email, name, role, and password of at least 12 characters.", "error")
             else:
                 try:
@@ -549,8 +553,8 @@ def create_app(test_config=None):
         writer.writerow(("Date", "Student", "Student email", "Class", "Status", "Notes"))
         for row in rows:
             values = [row.get(k, "") for k in ("attendance_date", "student_name", "student_email", "class_name", "status", "notes")]
-            writer.writerow([("'" + str(value)) if str(value).startswith(("=", "+", "-", "@", "\\t", "\\r")) else value for value in values])
-        response = make_response("\\ufeff" + output.getvalue())
+            writer.writerow([("'" + str(value)) if str(value).startswith(("=", "+", "-", "@", "\t", "\r")) else value for value in values])
+        response = make_response("\ufeff" + output.getvalue())
         response.headers["Content-Type"] = "text/csv; charset=utf-8"
         response.headers["Content-Disposition"] = f'attachment; filename="aura-log-{start}-to-{end}.csv"'
         return response
